@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Caça-Palavras — O Guardador de Palavras (v4)</title>
+<style>
+:root{--bg:#fff8f2;--card:#ffffff;--accent:#ff6b6b;--accent2:#4ecdc4;--text:#222}
+*{box-sizing:border-box;font-family:Inter,system-ui,Arial,sans-serif}
+body{margin:0;padding:20px;background:linear-gradient(180deg,var(--bg),#f0fbf9);color:var(--text)}
+.container{max-width:980px;margin:0 auto;background:var(--card);padding:18px;border-radius:12px;box-shadow:0 8px 30px rgba(20,20,20,0.08)}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+h1{margin:0;font-size:20px;color:var(--accent)}
+p.subtitle{margin:4px 0 0;color:#666;font-size:14px}
+.topbar{display:flex;gap:12px;align-items:center}
+.timer{font-weight:700;padding:8px 12px;border-radius:8px;background:linear-gradient(90deg,var(--accent),var(--accent2));color:#fff;min-width:110px;text-align:center}
+.grid-wrap{display:flex;gap:20px;flex-wrap:wrap;margin-top:18px;align-items:flex-start}
+.grid{display:grid;gap:4px;touch-action:none; user-select:none;}
+.cell{width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:6px;background:linear-gradient(180deg,#fff,#fafafa);user-select:none;font-weight:700;font-size:16px;color:#111;box-shadow:0 1px 0 rgba(0,0,0,0.03)}
+.cell.selected{background:linear-gradient(90deg,#ffd7d7,#d6fff6);}
+.cell.found{background:linear-gradient(90deg,#bde3ff,#d7f7d9);text-decoration:underline;}
+.word-list{min-width:220px}
+.word-item{padding:8px;border-radius:8px;margin-bottom:6px;background:linear-gradient(180deg,#fff,#fbfbfb);display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 6px rgba(12,12,12,0.03)}
+.word-item.found{opacity:0.5;text-decoration:line-through;color:#444}
+.controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px}
+button{padding:8px 12px;border-radius:8px;border:0;background:var(--accent);color:#fff;font-weight:700;cursor:pointer}
+button.ghost{background:transparent;border:2px solid var(--accent2);color:var(--accent2)}
+.footer{margin-top:14px;color:#666;font-size:13px}
+@media(max-width:720px){
+  .grid{grid-template-columns:repeat(10,36px);grid-auto-rows:36px}
+  .word-list{min-width:unset;width:100%}
+  .grid-wrap{flex-direction:column;align-items:center}
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>O Guardador de Palavras — Caça-palavras</h1>
+      <p class="subtitle">Encontre as palavras relacionadas ao livro. Tempo: <strong>3:00</strong></p>
+    </div>
+    <div class="topbar">
+      <div class="timer" id="timer">03:00</div>
+    </div>
+  </header>
+
+  <div class="grid-wrap">
+    <div id="board" aria-label="Caça palavras" ></div>
+    <aside class="word-list" id="wordList"></aside>
+  </div>
+
+  <div class="controls">
+    <button id="startBtn">Reiniciar (3:00)</button>
+    <button id="showSolution" class="ghost">Mostrar solução</button>
+    <div style="flex:1"></div>
+    <div id="status"></div>
+  </div>
+
+  <div class="footer">Toque e arraste ou clique e arraste sobre as letras. Agora todas as palavras diagonais funcionam corretamente.</div>
+</div>
+
+<script>
+const words = ["palavras","guardador","sabedoria","amizade","amor","pensamento","mistério","livro","segredo","poesia"];
+const ROWS = 12, COLS = 12, TIME_SECONDS = 180;
+let grid=[], placed=[], foundWords=new Set();
+const alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZÇÁÉÍÓÚÃÕÂÊÔ";
+const board=document.getElementById('board');
+const wordListEl=document.getElementById('wordList');
+const timerEl=document.getElementById('timer');
+let timerInterval=null, remaining=TIME_SECONDS;
+
+function randChar(){ return alphabet[Math.floor(Math.random()*alphabet.length)]; }
+
+function placeAllWords(){
+  grid=Array.from({length:ROWS},()=>Array.from({length:COLS},()=>""));
+  placed=[];
+  const dirs=[{r:0,c:1},{r:1,c:0},{r:1,c:1},{r:-1,c:0},{r:0,c:-1},{r:-1,c:-1},{r:1,c:-1},{r:-1,c:1}];
+  for(let w of words){
+    const W=w.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,"");
+    let placedOk=false;
+    for(let attempt=0;attempt<800 && !placedOk;attempt++){
+      const dir=dirs[Math.floor(Math.random()*dirs.length)];
+      const len=W.length;
+      const r=Math.floor(Math.random()*ROWS), c=Math.floor(Math.random()*COLS);
+      const endR=r+dir.r*(len-1), endC=c+dir.c*(len-1);
+      if(endR<0||endR>=ROWS||endC<0||endC>=COLS) continue;
+      let ok=true;
+      for(let i=0;i<len;i++){
+        const rr=r+dir.r*i, cc=c+dir.c*i;
+        if(grid[rr][cc] && grid[rr][cc]!==W[i]){ ok=false; break; }
+      }
+      if(!ok) continue;
+      for(let i=0;i<len;i++){ grid[r+dir.r*i][c+dir.c*i]=W[i]; }
+      placed.push({word:W,r,c,dir,len});
+      placedOk=true;
+    }
+    if(!placedOk) console.warn("Não foi possível colocar:", w);
+  }
+  for(let i=0;i<ROWS;i++){
+    for(let j=0;j<COLS;j++){ if(!grid[i][j]) grid[i][j]=randChar(); }
+  }
+}
+
+function renderGrid(){
+  board.innerHTML='';
+  board.style.gridTemplateColumns=`repeat(${COLS},36px)`;
+  board.style.display='grid';
+  for(let i=0;i<ROWS;i++){
+    for(let j=0;j<COLS;j++){
+      const cell=document.createElement('div');
+      cell.className='cell'; cell.dataset.r=i; cell.dataset.c=j; cell.textContent=grid[i][j];
+      board.appendChild(cell);
+    }
+  }
+}
+
+function renderWordList(){
+  wordListEl.innerHTML='';
+  for(let w of placed){
+    const div=document.createElement('div');
+    div.className='word-item'; div.id='w-'+w.word;
+    div.innerHTML=`<div>${w.word}</div><div class="len">${w.len}</div>`;
+    wordListEl.appendChild(div);
+  }
+}
+
+function getLineCells(r0,c0,r1,c1){
+  const points=[];
+  const dr=Math.sign(r1-r0), dc=Math.sign(c1-c0);
+  let r=r0, c=c0;
+  while(true){
+    points.push([r,c]);
+    if(r===r1 && c===c1) break;
+    if(r!==r1) r+=dr;
+    if(c!==c1) c+=dc;
+  }
+  return points;
+}
+
+let selecting=false, selection=[], startCell=null;
+
+function clearSelectionUI(){ document.querySelectorAll('.cell.selected').forEach(el=>el.classList.remove('selected')); selection=[]; startCell=null; }
+
+function pointerStart(x,y){
+  const el=document.elementFromPoint(x,y);
+  if(el?.classList.contains('cell')){ selecting=true; startCell=el; selection=[el]; el.classList.add('selected'); }
+}
+
+function pointerMove(x,y){
+  if(!selecting || !startCell) return;
+  const el=document.elementFromPoint(x,y);
+  if(!el?.classList.contains('cell')) return;
+  selection.forEach(e=>e.classList.remove('selected')); selection=[];
+  const r0=parseInt(startCell.dataset.r), c0=parseInt(startCell.dataset.c);
+  const r1=parseInt(el.dataset.r), c1=parseInt(el.dataset.c);
+  const coords=getLineCells(r0,c0,r1,c1);
+  coords.forEach(([r,c])=>{
+    const cell=document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+    if(cell){ selection.push(cell); cell.classList.add('selected'); }
+  });
+}
+
+function pointerEnd(){
+  if(!selecting) return; selecting=false;
+  const word=selection.map(e=>e.textContent).join('').toUpperCase();
+  const rev=word.split('').reverse().join('');
+  for(let p of placed){
+    if(foundWords.has(p.word)) continue;
+    if(word===p.word || rev===p.word){
+      foundWords.add(p.word);
+      selection.forEach(e=>{ e.classList.remove('selected'); e.classList.add('found'); });
+      document.getElementById('w-'+p.word)?.classList.add('found');
+      updateStatus();
+      clearSelectionUI();
+      checkWin();
+      return;
+    }
+  }
+  selection.forEach(e=>e.classList.add('notfound'));
+  setTimeout(()=>{ selection.forEach(e=>e.classList.remove('notfound')); clearSelectionUI(); },160);
+}
+
+function updateStatus(){ document.getElementById('status').textContent=`${foundWords.size} / ${placed.length} encontrados`; }
+function startTimer(){ clearTimer(); remaining=TIME_SECONDS; timerEl.textContent=formatTime(remaining); timerInterval=setInterval(()=>{ remaining--; timerEl.textContent=formatTime(remaining); if(remaining<=0){ clearTimer(); finish(false); } },1000); }
+function clearTimer(){ if(timerInterval) clearInterval(timerInterval); timerInterval=null; }
+function formatTime(sec){ const m=Math.floor(sec/60).toString().padStart(2,'0'); const s=(sec%60).toString().padStart(2,'0'); return `${m}:${s}`; }
+function checkWin(){ if(foundWords.size===placed.length){ clearTimer(); finish(true); } }
+function finish(won){ setTimeout(()=>{ alert(won?"Parabéns, Guardador de Palavras!":"Tempo esgotado — tente novamente!"); },60); }
+
+board.addEventListener('mousedown', e=>{ e.preventDefault(); pointerStart(e.clientX,e.clientY); window.addEventListener('mousemove', mouseMove); window.addEventListener('mouseup', mouseUp); });
+function mouseMove(e){ pointerMove(e.clientX,e.clientY); }
+function mouseUp(){ window.removeEventListener('mousemove', mouseMove); window.removeEventListener('mouseup', mouseUp); pointerEnd(); }
+
+board.addEventListener('touchstart', e=>{ e.preventDefault(); const t=e.touches[0]; pointerStart(t.clientX,t.clientY); },{passive:false});
+board.addEventListener('touchmove', e=>{ e.preventDefault(); const t=e.touches[0]; pointerMove(t.clientX,t.clientY); },{passive:false});
+board.addEventListener('touchend', e=>{ e.preventDefault(); pointerEnd(); },{passive:false});
+
+document.getElementById('startBtn').addEventListener('click', ()=>initBoard());
+document.getElementById('showSolution').addEventListener('click', ()=>{
+  for(let p of placed){ foundWords.add(p.word); for(let i=0;i<p.len;i++){ const r=p.r+p.dir.r*i, c=p.c+p.dir.c*i; document.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`)?.classList.add('found'); } document.getElementById('w-'+p.word)?.classList.add('found'); }
+  updateStatus(); clearTimer();
+});
+
+function initBoard(){ placeAllWords(); renderGrid(); renderWordList(); foundWords=new Set(); updateStatus(); clearSelectionUI(); startTimer(); }
+initBoard();
+</script>
+</body>
+</html>
